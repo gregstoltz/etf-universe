@@ -5,7 +5,6 @@ on:
   schedule:
     - cron: "30 13 * * 1-5"  # 09:30 Toronto ≈ 13:30 UTC
 
-# <-- CRITICAL: allow the workflow to push commits -->
 permissions:
   contents: write
 
@@ -16,23 +15,21 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0           # safer for pushes
+          fetch-depth: 0
           persist-credentials: true
 
       - name: Ensure target folder exists
         run: mkdir -p sheets
 
-      - name: Fetch SCAN CSV via gviz (by sheet name)
+      - name: Fetch SCAN CSV via export (preserves headers)
         run: |
-          curl -fSL "https://docs.google.com/spreadsheets/d/1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M/gviz/tq?tqx=out:csv&sheet=SCAN" -o sheets/SCAN.csv
+          # Replace GID_SCAN with the numeric gid of the SCAN tab
+          curl -fSL "https://docs.google.com/spreadsheets/d/1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M/export?format=csv&gid=GID_SCAN" -o sheets/SCAN.csv
 
       - name: Commit changes
         run: |
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
           git add sheets/SCAN.csv
-          git diff --cached --quiet && echo "No changes to commit" || git commit -m "Mirror: SCAN.csv from Google Sheets"
-
-      - name: Push
-        run: |
+          git diff --cached --quiet && echo "No changes to commit" || git commit -m "Mirror: SCAN.csv from Google Sheets (export)"
           git push
