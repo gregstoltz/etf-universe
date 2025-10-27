@@ -3,7 +3,7 @@ name: Morning Mirror — Full Workbook + Key CSVs
 on:
   workflow_dispatch:
   schedule:
-    # 08:00 Toronto ≈ 12:00 UTC (Mon–Fri). Adjust if you want weekends too.
+    # 08:00 Toronto ≈ 12:00 UTC (Mon–Fri). Change to "0 12 * * *" for every day.
     - cron: "0 12 * * 1-5"
 
 permissions:
@@ -11,6 +11,8 @@ permissions:
 
 env:
   SHEET_ID: "1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M"
+  PUB_E_ID: "2PACX-1vTpvBTBr4zzHKpcLc9V8vOCSFTvRJBaSvYWtOHrQbWTruTz3NYjAEfHnTDIdpCj2tCpYihiBXcjUHYh"
+  GID_SCAN: "1375435285"
 
 jobs:
   morning-mirror:
@@ -30,33 +32,87 @@ jobs:
         id: ts
         run: |
           echo "UTC_DATE=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
-          # Toronto time without tz database lookup; good enough for naming
           echo "LOCAL_DATE=$(TZ=America/Toronto date +%Y-%m-%d)" >> $GITHUB_OUTPUT
 
-      # ---- Option 1: FULL WORKBOOK SNAPSHOT (XLSX; includes ALL tabs) ----
-      - name: Download full workbook (XLSX)
+      - name: Helpers (robust fetch with HTTP/1.1 + retry + fallback)
+        shell: bash
         run: |
-          curl -fSL \
-            "https://docs.google.com/spreadsheets/d/${{ env.SHEET_ID }}/export?format=xlsx" \
-            -o "daily/Workbook_${{ steps.ts.outputs.LOCAL_DATE }}.xlsx"
+          set -euo pipefail
 
-      # ---- Option 2: KEY TABS AS CSV (add more gid entries as needed) ----
-      - name: Download key tabs as CSV
+          fetch_xlsx () {
+            local out="$1"
+            # Primary: /export?format=xlsx (Sheet ID)
+            if curl --http1.1 -fSL -A "GitHubActions/1.0" \
+              "https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx" \
+              -o "$out"; then
+              echo "Saved XLSX via /export → $out"
+              return 0
+            fi
+            echo "Primary XLSX failed, trying published fallback..."
+            # Fallback: /d/e/.../pub?output=xlsx (Published ID)
+            curl --http1.1 -fSL -A "GitHubActions/1.0" \
+              "https://docs.google.com/spreadsheets/d/e/${PUB_E_ID}/pub?output=xlsx" \
+              -o "$out"
+            echo "Saved XLSX via /pub → $out"
+          }
+
+          fetch_csv () {
+            local gid="$1"
+            local out="$2"
+            local tries=0
+            local max=4
+            local delay=3
+
+            # Try primary /export?format=csv&gid=
+            while (( tries < max )); do
+              if curl --http1.1 -fSL -A "GitHubActions/1.0" \
+                "https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gid}" \
+                -o "$out"; then
+                echo "Saved CSV via /export (gid=${gid}) → $out"
+                return 0
+              fi
+              tries=$((tries+1))
+              echo "Retry $tries/$max after ${delay}s…"
+              sleep "${delay}"
+            done
+
+            echo "Primary CSV failed after retries, trying published fallback…"
+            # Fallback: /d/e/.../pub?gid=...&single=true&output=csv
+            curl --http1.1 -fSL -A "GitHubActions/1.0" \
+              "https://docs.google.com/spreadsheets/d/e/${PUB_E_ID}/pub?gid=${gid}&single=true&output=csv" \
+              -o "$out"
+            echo "Saved CSV via /pub (gid=${gid}) → $out"
+          }
+
+          # Export functions into environment for later steps
+          declare -f fetch_xlsx >> $GITHUB_ENV
+          declare -f fetch_csv  >> $GITHUB_ENV
+
+      - name: Download full workbook (XLSX, all tabs)
+        shell: bash
         run: |
-          # List of "name:gid" pairs. Add more lines for more tabs.
+          source <(grep -E '^(fetch_xlsx|fetch_csv) ' "$GITHUB_ENV")
+          OUT="daily/Workbook_${{ steps.ts.outputs.LOCAL_DATE }}.xlsx"
+          fetch_xlsx "${OUT}"
+
+      - name: Download key tabs as CSV (add more as needed)
+        shell: bash
+        run: |
+          source <(grep -E '^(fetch_xlsx|fetch_csv) ' "$GITHUB_ENV")
+
+          # Add more "NAME:gid" lines to mirror more tabs
           TABS=(
-            "SCAN:1375435285"
+            "SCAN:${GID_SCAN}"
             # "SIGNALS:<gid_here>"
             # "PRICES:<gid_here>"
             # "HEALTH:<gid_here>"
           )
+
           for entry in "${TABS[@]}"; do
             NAME="${entry%%:*}"
             GID="${entry##*:}"
             echo "Fetching $NAME (gid=$GID)"
-            curl -fSL \
-              "https://docs.google.com/spreadsheets/d/${{ env.SHEET_ID }}/export?format=csv&gid=${GID}" \
-              -o "sheets/${NAME}.csv"
+            fetch_csv "${GID}" "sheets/${NAME}.csv"
           done
 
       - name: Commit changes
