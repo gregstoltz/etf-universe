@@ -1,0 +1,124 @@
+Symbol,Notes
+# === Global / Broad Market ===
+ACWI,All-Country World Index (iShares)
+ACWX,Ex-US World (iShares)
+ITOT,Total US Market (iShares)
+SCHB,US Broad Market (Schwab)
+VTI,Total US Market (Vanguard)
+VOO,S&P500 (Vanguard)
+IVV,S&P500 (iShares)
+SPY,S&P500 (SPDR)
+VFV,S&P500 CAD (Vanguard)
+VUN,Total US CAD (Vanguard)
+XBAL,Balanced CAD Portfolio (iShares)
+VBAL,Balanced CAD Portfolio (Vanguard)
+VGRO,Growth CAD Portfolio (Vanguard)
+VEQT,Equity CAD Portfolio (Vanguard)
+XEQT,Equity CAD Portfolio (iShares)
+VXC,Global ex-Canada (Vanguard)
+XAW,Global ex-Canada (iShares)
+VEA,Developed ex-US (Vanguard)
+IEFA,Developed ex-US (iShares)
+EFA,Developed ex-US (iShares)
+VIU,Developed ex-North America (Vanguard)
+VEE,Emerging Markets CAD (Vanguard)
+IEMG,Emerging Markets (iShares)
+EEM,Emerging Markets (iShares)
+XEC,Emerging Markets CAD (iShares)
+
+# === Canada Focused ===
+XIU,TSX 60 (iShares)
+VCN,Canadian All-Cap (Vanguard)
+ZCN,BMO S&P/TSX Capped Composite
+VCE,S&P/TSX Composite (Vanguard)
+VDY,Canadian Dividend (Vanguard)
+XDV,Canadian Dividend (iShares)
+XEI,Canadian High Dividend (iShares)
+ZDV,BMO Canadian Dividend
+ZLB,BMO Low Volatility Canada
+ZLU,BMO Low Volatility US (CAD)
+ZWC,BMO Covered Call Canada
+ZRE,BMO Equal Weight REITs
+XRE,iShares Canadian REIT
+XFN,Financials (iShares)
+ZEB,BMO Equal Weight Banks
+XEG,Energy (iShares)
+HED,Horizons BetaPro Energy Bear
+HEU,Horizons BetaPro Energy Bull
+HGD,Horizons BetaPro Gold Bear
+HGU,Horizons BetaPro Gold Bull
+HQD,Horizons BetaPro NASDAQ Bear
+HQU,Horizons BetaPro NASDAQ Bull
+XLB,Materials (iShares)
+XMA,Metals & Mining (iShares)
+XUT,Utilities (iShares)
+XSB,Short Bond (iShares)
+ZAG,BMO Aggregate Bond
+VAB,Vanguard Canadian Aggregate Bond
+ZFL,BMO Long Bond
+
+# === US Style / Factor ===
+IWB,US Large Blend (Russell 1000)
+IWD,US Large Value
+IWF,US Large Growth
+IWM,US Small Cap
+IWO,US Small Growth
+IWP,US Mid Growth
+IWS,US Mid Value
+IJH,US Mid Cap
+IJR,US Small Cap
+MTUM,Momentum (iShares)
+QUAL,Quality (iShares)
+SIZE,Size Factor (iShares)
+USMV,Min Volatility (iShares)
+VLUE,Value (iShares)
+VUG,Growth (Vanguard)
+VTV,Value (Vanguard)
+
+# === Sector / Thematic ===
+SMH,Semiconductors (VanEck)
+SOXX,Semiconductors (iShares)
+XIT,Canadian Technology (iShares)
+ZQQ,BMO NASDAQ 100
+XQQ,iShares NASDAQ 100
+HXQ,Horizons NASDAQ 100
+QQQ,NASDAQ 100 (Invesco)
+QQQM,NASDAQ 100 Mini
+IYR,US Real Estate (iShares)
+VNQ,Vanguard Real Estate
+XBI,Biotech (SPDR)
+JNK,US High Yield Bonds
+HYG,US High Yield Bonds (iShares)
+LQD,US Investment Grade Corporate Bonds
+AGG,US Aggregate Bonds (iShares)
+BND,Vanguard Total Bond Market
+IEF,US 7-10Y Treasury (iShares)
+TLT,US 20+Y Treasury (iShares)
+SHY,US 1-3Y Treasury (iShares)
+TIP,US TIPS (iShares)
+
+# === Commodities / Alt Assets ===
+CGL,Gold CAD Hedged (iShares)
+CGL.C,Gold CAD Unhedged (iShares)
+GLD,Gold (SPDR)
+IAU,Gold (iShares)
+SLV,Silver (iShares)
+DBC,Commodities Broad Basket
+USO,US Oil Fund
+UNG,Natural Gas Fund
+
+# === Balanced / Multi-Asset ===
+VBAL,Vanguard Balanced CAD
+XBAL,iShares Balanced CAD
+VGRO,Vanguard Growth CAD
+XGRO,iShares Growth CAD
+VEQT,Vanguard Equity CAD
+XEQT,iShares Equity CAD
+
+# === Misc & Derived ===
+VAB,Vanguard CAD Aggregate Bond
+VCE,Vanguard Canada Equity
+VCN,Vanguard Canada All-Cap
+VEE,Vanguard Emerging Markets CAD
+VIU,Vanguard Int’l Developed CAD
+VXC,Vanguard Global ex-Canada
