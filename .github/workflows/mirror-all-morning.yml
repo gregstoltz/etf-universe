@@ -1,0 +1,70 @@
+name: Morning Mirror — Full Workbook + Key CSVs
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 08:00 Toronto ≈ 12:00 UTC (Mon–Fri). Adjust if you want weekends too.
+    - cron: "0 12 * * 1-5"
+
+permissions:
+  contents: write
+
+env:
+  SHEET_ID: "1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M"
+
+jobs:
+  morning-mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Ensure target folders
+        run: |
+          mkdir -p daily sheets
+
+      - name: Timestamp (UTC & Toronto)
+        id: ts
+        run: |
+          echo "UTC_DATE=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
+          # Toronto time without tz database lookup; good enough for naming
+          echo "LOCAL_DATE=$(TZ=America/Toronto date +%Y-%m-%d)" >> $GITHUB_OUTPUT
+
+      # ---- Option 1: FULL WORKBOOK SNAPSHOT (XLSX; includes ALL tabs) ----
+      - name: Download full workbook (XLSX)
+        run: |
+          curl -fSL \
+            "https://docs.google.com/spreadsheets/d/${{ env.SHEET_ID }}/export?format=xlsx" \
+            -o "daily/Workbook_${{ steps.ts.outputs.LOCAL_DATE }}.xlsx"
+
+      # ---- Option 2: KEY TABS AS CSV (add more gid entries as needed) ----
+      - name: Download key tabs as CSV
+        run: |
+          # List of "name:gid" pairs. Add more lines for more tabs.
+          TABS=(
+            "SCAN:1375435285"
+            # "SIGNALS:<gid_here>"
+            # "PRICES:<gid_here>"
+            # "HEALTH:<gid_here>"
+          )
+          for entry in "${TABS[@]}"; do
+            NAME="${entry%%:*}"
+            GID="${entry##*:}"
+            echo "Fetching $NAME (gid=$GID)"
+            curl -fSL \
+              "https://docs.google.com/spreadsheets/d/${{ env.SHEET_ID }}/export?format=csv&gid=${GID}" \
+              -o "sheets/${NAME}.csv"
+          done
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add daily/ sheets/
+          git diff --cached --quiet && echo "No changes to commit" || git commit -m "Morning mirror: full workbook + key CSVs (${{ steps.ts.outputs.LOCAL_DATE }})"
+
+      - name: Push
+        run: git push
