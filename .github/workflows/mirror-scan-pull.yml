@@ -1,0 +1,27 @@
+name: Mirror SCAN from Google Sheets
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 9:30 AM Toronto ~ 13:30 UTC (adjust seasonally if needed)
+    - cron: "30 13 * * 1-5"
+
+jobs:
+  pull-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Fetch SCAN CSV from Google Sheets
+        run: |
+          # Replace NEW_SHEET_ID with your actual ID (between /d/ and /edit)
+          curl -L "https://docs.google.com/spreadsheets/d/NEW_SHEET_ID/gviz/tq?tqx=out:csv&sheet=SCAN" -o sheets/SCAN.csv
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add sheets/SCAN.csv
+          git commit -m "Mirror: SCAN.csv from Google Sheets" || echo "No changes to commit"
+          git push
