@@ -1,0 +1,133 @@
+Symbol,Source,Prefix,Notes
+^GSPC,YF,,S&P 500
+^NDX,YF,,Nasdaq 100
+^DJI,YF,,Dow Jones
+^RUT,YF,,Russell 2000
+^VIX,YF,,VIX
+^GSPTSE,YF,,S&P/TSX Composite
+^STOXX50E,YF,,Euro Stoxx 50
+^FTSE,YF,,FTSE 100
+SPY,GF,NYSEARCA:,US S&P 500
+IVV,GF,NYSEARCA:,US S&P 500
+VOO,GF,NYSEARCA:,US S&P 500
+VTI,GF,NYSEARCA:,US total market
+ITOT,GF,NYSEARCA:,US total market
+SCHB,GF,NYSEARCA:,US broad market
+IWB,GF,NYSEARCA:,US large cap
+IWD,GF,NYSEARCA:,US large value
+IWF,GF,NYSEARCA:,US large growth
+IJH,GF,NYSEARCA:,US mid cap
+IJR,GF,NYSEARCA:,US small cap
+IWS,GF,NYSEARCA:,US mid value
+IWP,GF,NYSEARCA:,US mid growth
+IWM,GF,NYSEARCA:,US small value
+IWO,GF,NYSEARCA:,US small growth
+DIA,GF,NYSEARCA:,Dow 30
+QQQ,GF,NASDAQ:,Nasdaq 100
+QQQM,GF,NASDAQ:,Nasdaq 100 (low fee)
+VUG,GF,NYSEARCA:,US large growth
+VTV,GF,NYSEARCA:,US large value
+XLK,GF,NYSEARCA:,US Technology
+XLF,GF,NYSEARCA:,US Financials
+XLE,GF,NYSEARCA:,US Energy
+XLI,GF,NYSEARCA:,US Industrials
+XLY,GF,NYSEARCA:,US Cons Disc
+XLP,GF,NYSEARCA:,US Cons Staples
+XLV,GF,NYSEARCA:,US Health Care
+XLU,GF,NYSEARCA:,US Utilities
+XLC,GF,NYSEARCA:,US Comm Services
+XLB,GF,NYSEARCA:,US Materials
+XLRE,GF,NYSEARCA:,US Real Estate
+MTUM,GF,BATS:,Momentum
+QUAL,GF,BATS:,Quality
+VLUE,GF,BATS:,Value
+USMV,GF,BATS:,Min Vol
+SIZE,GF,NYSEARCA:,Size
+XBI,GF,NYSEARCA:,Biotech
+SMH,GF,NASDAQ:,Semiconductors
+SOXX,GF,NASDAQ:,Semiconductors
+XME,GF,NYSEARCA:,Metals & Mining
+HYG,GF,NYSEARCA:,US High Yield
+JNK,GF,NYSEARCA:,US High Yield
+LQD,GF,NYSEARCA:,US IG Corporate
+BND,GF,NASDAQ:,US Aggregate
+AGG,GF,NYSEARCA:,US Aggregate
+TLT,GF,NASDAQ:,US 20+Y Treasuries
+IEF,GF,NASDAQ:,US 7–10Y Treasuries
+SHY,GF,NASDAQ:,US 1–3Y Treasuries
+TIP,GF,NYSEARCA:,US TIPS
+GLD,GF,NYSEARCA:,Gold
+IAU,GF,NYSEARCA:,Gold (low fee)
+SLV,GF,NYSEARCA:,Silver
+DBC,GF,NYSEARCA:,Broad Commodities
+USO,GF,NYSEARCA:,Crude Oil
+UNG,GF,NYSEARCA:,Natural Gas
+VNQ,GF,NYSEARCA:,US REITs
+IYR,GF,NYSEARCA:,US REITs
+EFA,GF,NYSEARCA:,Developed ex-US
+VEA,GF,NYSEARCA:,Developed ex-US
+IEFA,GF,BATS:,Developed ex-US
+VWO,GF,NYSEARCA:,Emerging Mkts
+EEM,GF,NYSEARCA:,Emerging Mkts
+IEMG,GF,NYSEARCA:,Emerging Mkts (IMI)
+ACWI,GF,NASDAQ:,ACWI
+ACWX,GF,NASDAQ:,ACWI ex-US
+XIU,GF,TSE:,S&P/TSX 60
+XIC,GF,TSE:,Canada total market
+ZCN,GF,TSE:,Canada total market
+VCN,GF,TSE:,Canada total market
+VCE,GF,TSE:,Canada large cap
+HXT,GF,TSE:,S&P/TSX 60 (swap)
+ZSP,GF,TSE:,S&P 500 (CAD)
+VFV,GF,TSE:,S&P 500 (CAD)
+XUS,GF,TSE:,S&P 500 (CAD)
+XUU,GF,TSE:,US total market (CAD)
+VUN,GF,TSE:,US total market (CAD)
+ZUE,GF,TSE:,US S&P 500 hedged (CAD)
+HXQ,GF,TSE:,Nasdaq 100 (swap)
+ZQQ,GF,TSE:,Nasdaq 100 (CAD)
+XQQ,GF,TSE:,Nasdaq 100 (CAD)
+QQC-F,GF,TSE:,Manual override (GF uses QQC.F; YF uses QQC-F.TO)
+XEF,GF,TSE:,Developed ex-NA (CAD)
+VIU,GF,TSE:,Developed ex-NA (CAD)
+ZEA,GF,TSE:,Developed ex-US (CAD)
+XEC,GF,TSE:,Emerging (CAD)
+VEE,GF,TSE:,Emerging (CAD)
+ZEM,GF,TSE:,Emerging (CAD)
+XAW,GF,TSE:,All-World ex-Canada (CAD)
+VXC,GF,TSE:,All-World ex-Canada (CAD)
+XIT,GF,TSE:,Technology (CAD)
+XFN,GF,TSE:,Financials (CAD)
+ZEB,GF,TSE:,Equal-weight Banks (CAD)
+XEG,GF,TSE:,Energy (CAD)
+ZEO,GF,TSE:,Equal-weight Oil & Gas (CAD)
+XRE,GF,TSE:,REITs (CAD)
+ZRE,GF,TSE:,REITs (CAD)
+XDV,GF,TSE:,High Dividend (CAD)
+VDY,GF,TSE:,High Dividend (CAD)
+XEI,GF,TSE:,Dividend (CAD)
+ZDV,GF,TSE:,Dividend (CAD)
+VAB,GF,TSE:,Aggregate Bonds (CAD)
+XBB,GF,TSE:,Aggregate Bonds (CAD)
+ZAG,GF,TSE:,Aggregate Bonds (CAD)
+XGB,GF,TSE:,Gov’t Bonds (CAD)
+XSB,GF,TSE:,Short Bonds (CAD)
+ZCS,GF,TSE:,Short Corporate (CAD)
+ZCM,GF,TSE:,Mid Corporate (CAD)
+ZLC,GF,TSE:,Long Corporate (CAD)
+XLB,GF,TSE:,Long Bonds (CAD)
+ZFL,GF,TSE:,Long Federal (CAD)
+XRB,GF,TSE:,Real Return (CAD)
+ZDB,GF,TSE:,Discount Bonds (CAD)
+XSH,GF,TSE:,Short Corporate (CAD)
+CGL,GF,TSE:,iShares Gold Bullion ETF
+CGL.C,GF,TSE:,Gold CAD-hedged (CAD)
+XEQT,GF,TSE:,All-equity (CAD)
+VEQT,GF,TSE:,All-equity (CAD)
+ZEQT,GF,TSE:,All-equity (CAD)
+XGRO,GF,TSE:,Growth (CAD)
+VGRO,GF,TSE:,Growth (CAD)
+ZGRO,GF,TSE:,Growth (CAD)
+XBAL,GF,TSE:,Balanced (CAD)
+VBAL,GF,TSE:,Balanced (CAD)
+ZBAL,GF,TSE:,Balanced (CAD)
