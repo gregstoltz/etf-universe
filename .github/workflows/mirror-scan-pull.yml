@@ -1,9 +1,10 @@
-name: Mirror SCAN from Google Sheets (Published URL)
+name: Mirror SCAN from Google Sheets (Export Endpoint)
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 13 * * 1-5"  # 09:30 Toronto ≈ 13:30 UTC
+    # 9:30 AM Toronto ≈ 13:30 UTC (Mon–Fri)
+    - cron: "30 13 * * 1-5"
 
 permissions:
   contents: write
@@ -21,17 +22,10 @@ jobs:
       - name: Ensure target folder exists
         run: mkdir -p sheets
 
-      - name: DEBUG: show HTTP status for published CSV
-        run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://docs.google.com/spreadsheets/d/e/2PACX-1vTpvBTBr4zzHKpcLc9V8vOCSFTvRJBaSvYWtOHrQbWTruTz3NYjAEfHnTDIdpCj2tCpYihiBXcjUHYh/pub?gid=GID_SCAN&single=true&output=csv")
-          echo "HTTP_STATUS=$STATUS"
-          test "$STATUS" = "200"
-
-      - name: Fetch SCAN CSV (published → preserves headers)
+      - name: Fetch SCAN CSV (preserves headers)
         run: |
           curl -fSL \
-            "https://docs.google.com/spreadsheets/d/e/2PACX-1vTpvBTBr4zzHKpcLc9V8vOCSFTvRJBaSvYWtOHrQbWTruTz3NYjAEfHnTDIdpCj2tCpYihiBXcjUHYh/pub?gid=GID_SCAN&single=true&output=csv" \
+            "https://docs.google.com/spreadsheets/d/1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M/export?format=csv&gid=1375435285" \
             -o sheets/SCAN.csv
 
       - name: Commit changes
@@ -39,5 +33,5 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
           git add sheets/SCAN.csv
-          git diff --cached --quiet && echo "No changes to commit" || git commit -m "Mirror: SCAN.csv from Google Sheets (published)"
+          git diff --cached --quiet && echo "No changes to commit" || git commit -m "Mirror: SCAN.csv from Google Sheets (export)"
           git push
