@@ -34,14 +34,14 @@ jobs:
           echo "UTC_DATE=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
           echo "LOCAL_DATE=$(TZ=America/Toronto date +%Y-%m-%d)" >> $GITHUB_OUTPUT
 
-      - name: Helpers (robust fetch with HTTP/1.1 + retry + fallback)
-        shell: bash
+      - name: Write helper script (HTTP/1.1 + retry + published fallback)
         run: |
+          cat > helper.sh <<'BASH'
           set -euo pipefail
 
           fetch_xlsx () {
             local out="$1"
-            # Primary: /export?format=xlsx (Sheet ID)
+            # Primary: /export?format=xlsx (SHEET_ID)
             if curl --http1.1 -fSL -A "GitHubActions/1.0" \
               "https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx" \
               -o "$out"; then
@@ -49,7 +49,7 @@ jobs:
               return 0
             fi
             echo "Primary XLSX failed, trying published fallback..."
-            # Fallback: /d/e/.../pub?output=xlsx (Published ID)
+            # Fallback: /d/e/.../pub?output=xlsx (PUB_E_ID)
             curl --http1.1 -fSL -A "GitHubActions/1.0" \
               "https://docs.google.com/spreadsheets/d/e/${PUB_E_ID}/pub?output=xlsx" \
               -o "$out"
@@ -83,22 +83,18 @@ jobs:
               -o "$out"
             echo "Saved CSV via /pub (gid=${gid}) → $out"
           }
-
-          # Export functions into environment for later steps
-          declare -f fetch_xlsx >> $GITHUB_ENV
-          declare -f fetch_csv  >> $GITHUB_ENV
+          BASH
+          chmod +x helper.sh
 
       - name: Download full workbook (XLSX, all tabs)
-        shell: bash
         run: |
-          source <(grep -E '^(fetch_xlsx|fetch_csv) ' "$GITHUB_ENV")
+          source ./helper.sh
           OUT="daily/Workbook_${{ steps.ts.outputs.LOCAL_DATE }}.xlsx"
           fetch_xlsx "${OUT}"
 
       - name: Download key tabs as CSV (add more as needed)
-        shell: bash
         run: |
-          source <(grep -E '^(fetch_xlsx|fetch_csv) ' "$GITHUB_ENV")
+          source ./helper.sh
 
           # Add more "NAME:gid" lines to mirror more tabs
           TABS=(
