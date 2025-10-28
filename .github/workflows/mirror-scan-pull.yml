@@ -1,37 +1,62 @@
 name: Mirror SCAN from Google Sheets (Export Endpoint)
 
 on:
-  workflow_dispatch:
   schedule:
-    # 9:30 AM Toronto ≈ 13:30 UTC (Mon–Fri)
+    # 13:30 UTC = 09:30 America/Toronto on weekdays
     - cron: "30 13 * * 1-5"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: mirror-scan-pull
+  cancel-in-progress: false
+
 jobs:
-  pull-scan:
+  mirror_scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      SHEET_ID: ${{ secrets.SHEET_ID }}
+      GID_SCAN: ${{ secrets.GID_SCAN }}   # set this secret to the SCAN tab's gid
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: true
 
-      - name: Ensure target folder exists
-        run: mkdir -p sheets
-
-      - name: Fetch SCAN CSV (preserves headers)
+      - name: Show UTC/Toronto time (for logs)
         run: |
-          curl -fSL \
-            "https://docs.google.com/spreadsheets/d/1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M/export?format=csv&gid=1375435285" \
-            -o sheets/SCAN.csv
+          echo "UTC:      $(date -u +%FT%TZ)"
+          TZ=America/Toronto date "+Toronto: %Y-%m-%d %H:%M:%S %Z (%z)"
 
-      - name: Commit changes
+      - name: Ensure publisher script is executable
+        run: chmod +x scripts/publish_tab.sh
+
+      - name: Export & publish SCAN (no incremental; snapshot)
         run: |
-          git config user.name "github-actions"
-          git config user.email "actions@users.noreply.github.com"
-          git add sheets/SCAN.csv
-          git diff --cached --quiet && echo "No changes to commit" || git commit -m "Mirror: SCAN.csv from Google Sheets (export)"
+          scripts/publish_tab.sh \
+            --sheet-id "${SHEET_ID}" \
+            --tab-name "SCAN" \
+            --gid "${GID_SCAN}" \
+            --branch "main" \
+            --chunk-size 600
+
+      - name: Commit & push SCAN artifacts
+        run: |
+          git config user.name  "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add sheets/SCAN.csv live/SCAN/** || true
+          git commit -m "Mirror SCAN: export + /live artifacts" || echo "No changes"
           git push
+
+      # Optional: make quick preview files downloadable from the run
+      - name: Upload head/schema preview (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SCAN-preview
+          path: |
+            live/SCAN/head.csv
+            live/SCAN/schema.json
+          if-no-files-found: ignore
