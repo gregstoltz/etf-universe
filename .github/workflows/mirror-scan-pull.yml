@@ -1,4 +1,4 @@
-name: Mirror SCAN (simple)
+name: Mirror SCAN (simple, header-safe)
 
 on:
   workflow_dispatch: {}
@@ -15,22 +15,32 @@ jobs:
       SHEET_ID: 1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M
       SHEET_NAME: SCAN
       OUT_PATH: sheets/SCAN.csv
+      TZ: America/Toronto
     steps:
       - uses: actions/checkout@v4
 
-- name: Fetch SCAN via gviz (by name, no gid)
-  run: |
-    set -euo pipefail
-    mkdir -p "$(dirname "$OUT_PATH")"
-    # Force the pull to start at row 1
-    URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${SHEET_NAME}&range=A1:ZZZ100000"
-    echo "Fetching: $URL"
-    curl -fSLo "$OUT_PATH" "$URL"
-    head -n 3 "$OUT_PATH" || true
-
+      - name: Fetch SCAN via gviz (by name, force A1 range)
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$OUT_PATH")"
+          # Force pull from A1 to include headers (expand columns/rows generously)
+          URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${SHEET_NAME}&range=A1:ZZZ100000"
+          echo "Fetching: $URL"
+          curl -fSLo "$OUT_PATH" "$URL"
+          test -s "$OUT_PATH"
+          echo "First 3 lines:"
+          head -n 3 "$OUT_PATH" || true
 
       - name: Commit & push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Mirror SCAN (gviz): $(date -u +'%Y-%m-%dT%H:%MZ')"
+          commit_message: "Mirror SCAN (gviz, header-safe): $(date -u +'%Y-%m-%dT%H:%MZ')"
           file_pattern: ${{ env.OUT_PATH }}
+
+      - name: Upload artifact (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mirror-scan-output
+          path: ${{ env.OUT_PATH }}
+          if-no-files-found: warn
