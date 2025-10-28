@@ -1,19 +1,9 @@
-name: Mirror SCAN from Google Sheets
+name: Mirror SCAN (no GID, no Sheet edits)
 
 on:
-  workflow_dispatch:
-    inputs:
-      SHEET_ID:
-        description: "Google Sheet ID"
-        required: false
-      GID:
-        description: "SCAN sheet gid"
-        required: false
-      OUT_PATH:
-        description: "Repo path for output CSV"
-        required: false
+  workflow_dispatch: {}
   schedule:
-    # 12:00 UTC = 08:00 America/Toronto weekdays
+    # 12:00 UTC = 08:00 America/Toronto (weekdays)
     - cron: "0 12 * * 1-5"
 
 permissions:
@@ -23,61 +13,116 @@ jobs:
   mirror_scan:
     runs-on: ubuntu-latest
     env:
-      # --- sensible defaults; override via workflow_dispatch if needed ---
-      SHEET_ID: ${{ inputs.SHEET_ID || '1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M' }}
-      GID: ${{ inputs.GID || '1375435285' }}
-      OUT_PATH: ${{ inputs.OUT_PATH || 'sheets/SCAN.csv' }}
+      OUT_PATH: sheets/SCAN.csv
+      SHEET_NAME: SCAN
       TZ: America/Toronto
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Echo inputs (debug)
-        run: |
-          echo "SHEET_ID=$SHEET_ID"
-          echo "GID=$GID"
-          echo "OUT_PATH=$OUT_PATH"
-
-      - name: Build export URL
-        id: build
+      - name: Auto-detect Google Sheet ID from repo
+        id: detect
+        shell: bash
         run: |
           set -euo pipefail
-          URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}"
-          echo "URL=${URL}" | tee -a $GITHUB_OUTPUT
-          # also store for later steps
-          echo "URL=${URL}" >> $GITHUB_ENV
+          # Search common config files first, then entire repo
+          CANDIDATES=$( ( \
+            git grep -h -oE 'https://docs\.google\.com/spreadsheets/d/[^/" ]+' -- \
+              config/ sheets_manifest.json README* || true; \
+            git grep -h -oE 'https://docs\.google\.com/spreadsheets/d/[^/" ]+' || true \
+          ) | awk '!seen[$0]++' )
 
-      - name: Fetch SCAN CSV (with strong failure)
+          if [ -z "$CANDIDATES" ]; then
+            echo "ERROR: Could not find any Google Sheets link in repo. Add one anywhere (README/config/etc.)."
+            exit 2
+          fi
+
+          # Extract first sheet ID
+          SHEET_ID=$(echo "$CANDIDATES" | head -n1 | sed -E 's#.*/spreadsheets/d/([^/"]+).*#\1#')
+          if [ -z "$SHEET_ID" ]; then
+            echo "ERROR: Found a Sheets URL but failed to parse ID."
+            echo "$CANDIDATES" | head -n1
+            exit 2
+          fi
+
+          echo "SHEET_ID=$SHEET_ID" | tee -a "$GITHUB_ENV"
+          echo "Detected Sheet ID: $SHEET_ID"
+
+      - name: Build XLSX export URL
         run: |
           set -euo pipefail
-          mkdir -p "$(dirname "$OUT_PATH")"
-          echo "Fetching: $URL"
-          # -f = fail on HTTP errors, -S show error, -L follow redirects
-          curl -fSLo "$OUT_PATH" "$URL"
-          echo "Downloaded file size (bytes): $(wc -c < "$OUT_PATH")"
-          echo "First 3 lines:"
-          head -n 3 "$OUT_PATH" || true
+          URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx"
+          echo "URL=$URL" | tee -a "$GITHUB_ENV"
+
+      - name: Fetch workbook (XLSX)
+        run: |
+          set -euo pipefail
+          mkdir -p tmp
+          echo "Fetching workbook: $URL"
+          curl -fSLo tmp/workbook.xlsx "$URL"
+          ls -lh tmp/workbook.xlsx
+          file tmp/workbook.xlsx || true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install openpyxl
+
+      - name: Extract SCAN sheet to CSV (by name, not gid)
+        run: |
+          set -euo pipefail
+          python - << 'PY'
+import sys, csv
+from openpyxl import load_workbook
+wb = load_workbook("tmp/workbook.xlsx", data_only=True, read_only=True)
+sheet_name = "${{ env.SHEET_NAME }}"
+if sheet_name not in wb.sheetnames:
+    print("ERROR: Sheet named '%s' not found. Available sheets: %s" % (sheet_name, wb.sheetnames))
+    sys.exit(2)
+ws = wb[sheet_name]
+out_path = "${{ env.OUT_PATH }}"
+import os
+os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+# Convert rows to CSV, trimming trailing None
+with open(out_path, "w", newline="", encoding="utf-8") as f:
+    w = csv.writer(f)
+    for row in ws.iter_rows(values_only=True):
+        r = list(row)
+        # strip trailing empty cells
+        while r and (r[-1] is None or str(r[-1]).strip() == ""):
+            r.pop()
+        w.writerow(["" if v is None else v for v in r])
+
+print("Wrote", out_path)
+PY
 
       - name: Validate CSV looks sane
         run: |
           set -euo pipefail
+          test -s "$OUT_PATH" || { echo "ERROR: $OUT_PATH is empty"; exit 2; }
           LINES=$(wc -l < "$OUT_PATH" || echo 0)
           if [ "$LINES" -lt 2 ]; then
-            echo "ERROR: Fetched CSV has fewer than 2 lines (likely error page or empty)."
-            echo "File head:"
+            echo "ERROR: CSV has fewer than 2 lines (likely the tab is empty)."
             head -n 20 "$OUT_PATH" || true
             exit 2
           fi
-          # basic header checks; adjust to your SCAN header
-          if ! head -n1 "$OUT_PATH" | grep -q "Symbol,Live,Trend,Momentum"; then
-            echo "WARNING: Header does not match expected SCAN columns. Continuing, but please verify."
+          head -n1 "$OUT_PATH" | grep -q "Symbol,Live,Trend,Momentum" || {
+            echo "WARNING: Header doesn't match expected SCAN columns. First line:"
             head -n1 "$OUT_PATH"
-          fi
+          }
+          echo "First 3 lines:"
+          head -n3 "$OUT_PATH"
 
       - name: Commit & push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Mirror SCAN: $(date -u +'%Y-%m-%dT%H:%MZ')"
+          commit_message: "Mirror SCAN (auto): $(date -u +'%Y-%m-%dT%H:%MZ')"
           file_pattern: ${{ env.OUT_PATH }}
 
       - name: Upload artifact (always)
