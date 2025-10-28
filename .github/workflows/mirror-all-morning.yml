@@ -1,122 +1,140 @@
 name: Morning Mirror — Full Workbook + Key CSVs
 
 on:
-  workflow_dispatch:
   schedule:
-    # 08:00 Toronto ≈ 12:00 UTC (Mon–Fri). Change to "0 12 * * *" for every day.
+    # 12:00 UTC = 08:00 America/Toronto on weekdays
     - cron: "0 12 * * 1-5"
+  workflow_dispatch:
 
+# Needed to push CSVs & /live artifacts back to the repo
 permissions:
   contents: write
 
-env:
-  SHEET_ID: "1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M"
-  PUB_E_ID: "2PACX-1vTpvBTBr4zzHKpcLc9V8vOCSFTvRJBaSvYWtOHrQbWTruTz3NYjAEfHnTDIdpCj2tCpYihiBXcjUHYh"
-  GID_SCAN: "1375435285"
+# Prevent overlapping runs if one is still going
+concurrency:
+  group: morning-mirror
+  cancel-in-progress: false
 
 jobs:
-  morning-mirror:
+  mirror:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      # Sheet + (optional) CSV config (TabName,GID)
+      SHEET_ID: ${{ secrets.SHEET_ID }}
+      # If you have a config/tabs.csv, leave as-is.
+      # If not, see the fallback matrix section below.
+      CONFIG_TABS: config/tabs.csv
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: true
 
-      - name: Ensure target folders
+      - name: Show UTC/Toronto time (for logs only)
         run: |
-          mkdir -p daily sheets
+          echo "UTC:      $(date -u +%FT%TZ)"
+          TZ=America/Toronto date "+Toronto: %Y-%m-%d %H:%M:%S %Z (%z)"
 
-      - name: Timestamp (UTC & Toronto)
-        id: ts
+      - name: Ensure scripts are executable
         run: |
-          echo "UTC_DATE=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
-          echo "LOCAL_DATE=$(TZ=America/Toronto date +%Y-%m-%d)" >> $GITHUB_OUTPUT
+          chmod +x scripts/publish_tab.sh || true
+          chmod +x scripts/publish_all_tabs.sh || true
 
-      - name: Write helper script (HTTP/1.1 + retry + published fallback)
+      # ──────────────────────────────────────────────────────────────
+      # OPTION A: Drive from config/tabs.csv (recommended)
+      #   File format: TabName,GID (with header row)
+      #   e.g.
+      #     TabName,GID
+      #     SCAN,1375435285
+      #     H_XIU,111111111
+      #     TA_XIU,222222222
+      # If scripts/publish_all_tabs.sh exists, use it; else loop locally.
+      # ──────────────────────────────────────────────────────────────
+      - name: Publish all tabs (from config/tabs.csv)
+        if: ${{ env.SHEET_ID != '' && hashFiles(env.CONFIG_TABS) != '' && exists('scripts/publish_all_tabs.sh') }}
         run: |
-          cat > helper.sh <<'BASH'
-          set -euo pipefail
+          ./scripts/publish_all_tabs.sh \
+            --sheet-id "${SHEET_ID}" \
+            --branch "main" \
+            --config "${CONFIG_TABS}"
 
-          fetch_xlsx () {
-            local out="$1"
-            # Primary: /export?format=xlsx (SHEET_ID)
-            if curl --http1.1 -fSL -A "GitHubActions/1.0" \
-              "https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx" \
-              -o "$out"; then
-              echo "Saved XLSX via /export → $out"
-              return 0
+      - name: Publish all tabs (inline loop; no publish_all_tabs.sh)
+        if: ${{ env.SHEET_ID != '' && hashFiles(env.CONFIG_TABS) != '' && !exists('scripts/publish_all_tabs.sh') }}
+        run: |
+          while IFS=, read -r NAME GID; do
+            # skip header
+            [[ "$NAME" == "TabName" ]] && continue
+            # Incremental 30d only for H_* or TA_*; full replace for others (e.g., SCAN)
+            if [[ "$NAME" == H_* || "$NAME" == TA_* ]]; then
+              scripts/publish_tab.sh \
+                --sheet-id "${SHEET_ID}" \
+                --tab-name "${NAME}" \
+                --gid "${GID}" \
+                --branch "main" \
+                --incremental-days 30 \
+                --date-col Date \
+                --chunk-size 1000
+            else
+              scripts/publish_tab.sh \
+                --sheet-id "${SHEET_ID}" \
+                --tab-name "${NAME}" \
+                --gid "${GID}" \
+                --branch "main" \
+                --chunk-size 600
             fi
-            echo "Primary XLSX failed, trying published fallback..."
-            # Fallback: /d/e/.../pub?output=xlsx (PUB_E_ID)
-            curl --http1.1 -fSL -A "GitHubActions/1.0" \
-              "https://docs.google.com/spreadsheets/d/e/${PUB_E_ID}/pub?output=xlsx" \
-              -o "$out"
-            echo "Saved XLSX via /pub → $out"
-          }
+          done < "${CONFIG_TABS}"
 
-          fetch_csv () {
-            local gid="$1"
-            local out="$2"
-            local tries=0
-            local max=4
-            local delay=3
-
-            # Try primary /export?format=csv&gid=
-            while (( tries < max )); do
-              if curl --http1.1 -fSL -A "GitHubActions/1.0" \
-                "https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gid}" \
-                -o "$out"; then
-                echo "Saved CSV via /export (gid=${gid}) → $out"
-                return 0
-              fi
-              tries=$((tries+1))
-              echo "Retry $tries/$max after ${delay}s…"
-              sleep "${delay}"
-            done
-
-            echo "Primary CSV failed after retries, trying published fallback…"
-            # Fallback: /d/e/.../pub?gid=...&single=true&output=csv
-            curl --http1.1 -fSL -A "GitHubActions/1.0" \
-              "https://docs.google.com/spreadsheets/d/e/${PUB_E_ID}/pub?gid=${gid}&single=true&output=csv" \
-              -o "$out"
-            echo "Saved CSV via /pub (gid=${gid}) → $out"
-          }
-          BASH
-          chmod +x helper.sh
-
-      - name: Download full workbook (XLSX, all tabs)
+      # ──────────────────────────────────────────────────────────────
+      # OPTION B (fallback): No config/tabs.csv?
+      #   Use a small matrix of known tabs. Add rows as needed.
+      #   Delete this whole job step once A is working.
+      # ──────────────────────────────────────────────────────────────
+      - name: Fallback — explicitly publish a few tabs (delete once config is used)
+        if: ${{ env.SHEET_ID != '' && hashFiles(env.CONFIG_TABS) == '' }}
         run: |
-          source ./helper.sh
-          OUT="daily/Workbook_${{ steps.ts.outputs.LOCAL_DATE }}.xlsx"
-          fetch_xlsx "${OUT}"
+          # SCAN (snapshot; no incremental)
+          scripts/publish_tab.sh \
+            --sheet-id "${SHEET_ID}" \
+            --tab-name "SCAN" \
+            --gid "${{ secrets.GID_SCAN }}" \
+            --branch "main" \
+            --chunk-size 600
 
-      - name: Download key tabs as CSV (add more as needed)
+          # Example H_/TA_ with incremental tail rewrite
+          # (uncomment & set secrets GIDs for your symbols)
+          # scripts/publish_tab.sh \
+          #   --sheet-id "${SHEET_ID}" \
+          #   --tab-name "H_XIU" \
+          #   --gid "${{ secrets.GID_H_XIU }}" \
+          #   --branch "main" \
+          #   --incremental-days 30 \
+          #   --date-col Date \
+          #   --chunk-size 1000
+
+          # scripts/publish_tab.sh \
+          #   --sheet-id "${SHEET_ID}" \
+          #   --tab-name "TA_XIU" \
+          #   --gid "${{ secrets.GID_TA_XIU }}" \
+          #   --branch "main" \
+          #   --incremental-days 30 \
+          #   --date-col Date \
+          #   --chunk-size 1000
+
+      - name: Commit & push artifacts
         run: |
-          source ./helper.sh
+          git config user.name  "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add sheets/*.csv live/** || true
+          git commit -m "Morning Mirror: publish per-page CSVs + /live artifacts" || echo "No changes"
+          git push
 
-          # Add more "NAME:gid" lines to mirror more tabs
-          TABS=(
-            "SCAN:${GID_SCAN}"
-            # "SIGNALS:<gid_here>"
-            # "PRICES:<gid_here>"
-            # "HEALTH:<gid_here>"
-          )
-
-          for entry in "${TABS[@]}"; do
-            NAME="${entry%%:*}"
-            GID="${entry##*:}"
-            echo "Fetching $NAME (gid=$GID)"
-            fetch_csv "${GID}" "sheets/${NAME}.csv"
-          done
-
-      - name: Commit changes
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@users.noreply.github.com"
-          git add daily/ sheets/
-          git diff --cached --quiet && echo "No changes to commit" || git commit -m "Morning mirror: full workbook + key CSVs (${{ steps.ts.outputs.LOCAL_DATE }})"
-
-      - name: Push
-        run: git push
+      # Optional: upload the latest head/schema for quick inspection in Actions UI
+      - name: Upload quick preview artifacts (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-previews
+          path: |
+            live/*/head.csv
+            live/*/schema.json
+          if-no-files-found: ignore
