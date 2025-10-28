@@ -1,62 +1,89 @@
-name: Mirror SCAN from Google Sheets (Export Endpoint)
+name: Mirror SCAN from Google Sheets
 
 on:
-  schedule:
-    # 13:30 UTC = 09:30 America/Toronto on weekdays
-    - cron: "30 13 * * 1-5"
   workflow_dispatch:
+    inputs:
+      SHEET_ID:
+        description: "Google Sheet ID"
+        required: false
+      GID:
+        description: "SCAN sheet gid"
+        required: false
+      OUT_PATH:
+        description: "Repo path for output CSV"
+        required: false
+  schedule:
+    # 12:00 UTC = 08:00 America/Toronto weekdays
+    - cron: "0 12 * * 1-5"
 
 permissions:
   contents: write
 
-concurrency:
-  group: mirror-scan-pull
-  cancel-in-progress: false
-
 jobs:
   mirror_scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
     env:
-      SHEET_ID: ${{ secrets.SHEET_ID }}
-      GID_SCAN: ${{ secrets.GID_SCAN }}   # set this secret to the SCAN tab's gid
-
+      # --- sensible defaults; override via workflow_dispatch if needed ---
+      SHEET_ID: ${{ inputs.SHEET_ID || '1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M' }}
+      GID: ${{ inputs.GID || '1375435285' }}
+      OUT_PATH: ${{ inputs.OUT_PATH || 'sheets/SCAN.csv' }}
+      TZ: America/Toronto
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show UTC/Toronto time (for logs)
+      - name: Echo inputs (debug)
         run: |
-          echo "UTC:      $(date -u +%FT%TZ)"
-          TZ=America/Toronto date "+Toronto: %Y-%m-%d %H:%M:%S %Z (%z)"
+          echo "SHEET_ID=$SHEET_ID"
+          echo "GID=$GID"
+          echo "OUT_PATH=$OUT_PATH"
 
-      - name: Ensure publisher script is executable
-        run: chmod +x scripts/publish_tab.sh
-
-      - name: Export & publish SCAN (no incremental; snapshot)
+      - name: Build export URL
+        id: build
         run: |
-          scripts/publish_tab.sh \
-            --sheet-id "${SHEET_ID}" \
-            --tab-name "SCAN" \
-            --gid "${GID_SCAN}" \
-            --branch "main" \
-            --chunk-size 600
+          set -euo pipefail
+          URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}"
+          echo "URL=${URL}" | tee -a $GITHUB_OUTPUT
+          # also store for later steps
+          echo "URL=${URL}" >> $GITHUB_ENV
 
-      - name: Commit & push SCAN artifacts
+      - name: Fetch SCAN CSV (with strong failure)
         run: |
-          git config user.name  "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
-          git add sheets/SCAN.csv live/SCAN/** || true
-          git commit -m "Mirror SCAN: export + /live artifacts" || echo "No changes"
-          git push
+          set -euo pipefail
+          mkdir -p "$(dirname "$OUT_PATH")"
+          echo "Fetching: $URL"
+          # -f = fail on HTTP errors, -S show error, -L follow redirects
+          curl -fSLo "$OUT_PATH" "$URL"
+          echo "Downloaded file size (bytes): $(wc -c < "$OUT_PATH")"
+          echo "First 3 lines:"
+          head -n 3 "$OUT_PATH" || true
 
-      # Optional: make quick preview files downloadable from the run
-      - name: Upload head/schema preview (optional)
+      - name: Validate CSV looks sane
+        run: |
+          set -euo pipefail
+          LINES=$(wc -l < "$OUT_PATH" || echo 0)
+          if [ "$LINES" -lt 2 ]; then
+            echo "ERROR: Fetched CSV has fewer than 2 lines (likely error page or empty)."
+            echo "File head:"
+            head -n 20 "$OUT_PATH" || true
+            exit 2
+          fi
+          # basic header checks; adjust to your SCAN header
+          if ! head -n1 "$OUT_PATH" | grep -q "Symbol,Live,Trend,Momentum"; then
+            echo "WARNING: Header does not match expected SCAN columns. Continuing, but please verify."
+            head -n1 "$OUT_PATH"
+          fi
+
+      - name: Commit & push if changed
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Mirror SCAN: $(date -u +'%Y-%m-%dT%H:%MZ')"
+          file_pattern: ${{ env.OUT_PATH }}
+
+      - name: Upload artifact (always)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SCAN-preview
-          path: |
-            live/SCAN/head.csv
-            live/SCAN/schema.json
-          if-no-files-found: ignore
+          name: mirror-scan-output
+          path: ${{ env.OUT_PATH }}
+          if-no-files-found: warn
