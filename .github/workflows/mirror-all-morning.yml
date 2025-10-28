@@ -1,114 +1,112 @@
-name: Morning Mirror — Full Workbook + Key CSVs
+name: Mirror ALL sheets (header-safe)
 
 on:
+  workflow_dispatch: {}
   schedule:
-    # 12:00 UTC = 08:00 America/Toronto on weekdays
-    - cron: "0 12 * * 1-5"
-  workflow_dispatch:
+    - cron: "0 12 * * 1-5"   # 08:00 Toronto, weekdays
 
 permissions:
   contents: write
 
-concurrency:
-  group: morning-mirror
-  cancel-in-progress: false
-
 jobs:
-  mirror:
+  mirror_all:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-
     env:
-      SHEET_ID: ${{ secrets.SHEET_ID }}
-      CONFIG_TABS: config/tabs.csv
+      SHEET_ID: 1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M
+      OUT_DIR: sheets         # where CSVs will land
+      EXCLUDE_RX: ""          # e.g., "^(H_|TA_)" to skip those
+      HEADER_ROW: "1"         # set to "2" if your headers live on row 2
+      TZ: America/Toronto
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Show UTC/Toronto time (for logs only)
+      - name: Fetch workbook (XLSX)
         run: |
-          echo "UTC:      $(date -u +%FT%TZ)"
-          TZ=America/Toronto date "+Toronto: %Y-%m-%d %H:%M:%S %Z (%z)"
+          set -euo pipefail
+          mkdir -p tmp
+          URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx"
+          echo "Fetching workbook: $URL"
+          curl -fSLo tmp/workbook.xlsx "$URL"
+          ls -lh tmp/workbook.xlsx
 
-      - name: Ensure scripts are executable
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
         run: |
-          chmod +x scripts/publish_tab.sh || true
-          chmod +x scripts/publish_all_tabs.sh || true
+          python -m pip install --upgrade pip
+          pip install openpyxl
 
-      - name: Export config/tabs.csv from Google Sheets (TABS tab)
-        env:
-          SHEET_ID: ${{ secrets.SHEET_ID }}
-          GID_TABS: ${{ secrets.GID_TABS }}
+      - name: Split each tab into its own CSV (respect HEADER_ROW)
         run: |
-          mkdir -p config
-          curl -sSL \
-            "https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID_TABS}" \
-            -o config/tabs.csv
-          echo "tabs.csv:"
-          head -n 10 config/tabs.csv || true
+          set -euo pipefail
+          python - << 'PY'
+import csv, os, re, json
+from openpyxl import load_workbook
 
-      # OPTION A: Drive from config/tabs.csv (recommended)
-      - name: Publish all tabs (from config/tabs.csv via helper)
-        if: ${{ env.SHEET_ID != '' && hashFiles('config/tabs.csv') != '' && hashFiles('scripts/publish_all_tabs.sh') != '' }}
-        run: |
-          scripts/publish_all_tabs.sh \
-            --sheet-id "${SHEET_ID}" \
-            --branch "main" \
-            --config "${CONFIG_TABS}"
+sheet_id   = os.getenv("SHEET_ID")
+out_dir    = os.getenv("OUT_DIR","sheets")
+exclude_rx = os.getenv("EXCLUDE_RX","")
+hdr_row    = int(os.getenv("HEADER_ROW","1"))  # 1-based index for the first row to export
 
-      - name: Publish all tabs (inline loop; no publish_all_tabs.sh)
-        if: ${{ env.SHEET_ID != '' && hashFiles('config/tabs.csv') != '' && hashFiles('scripts/publish_all_tabs.sh') == '' }}
-        run: |
-          while IFS=, read -r NAME GID REST; do
-            # skip header
-            [[ "$NAME" == "TabName" ]] && continue
-            if [[ "$NAME" == H_* || "$NAME" == TA_* ]]; then
-              scripts/publish_tab.sh \
-                --sheet-id "${SHEET_ID}" \
-                --tab-name "${NAME}" \
-                --gid "${GID}" \
-                --branch "main" \
-                --incremental-days 30 \
-                --date-col Date \
-                --chunk-size 1000
-            else
-              scripts/publish_tab.sh \
-                --sheet-id "${SHEET_ID}" \
-                --tab-name "${NAME}" \
-                --gid "${GID}" \
-                --branch "main" \
-                --chunk-size 600
-            fi
-          done < "${CONFIG_TABS}"
+ex = re.compile(exclude_rx) if exclude_rx else None
+os.makedirs(out_dir, exist_ok=True)
 
-      # OPTION B: Fallback if tabs.csv isn’t available
-      - name: Fallback — explicitly publish a few tabs (delete once config is used)
-        if: ${{ env.SHEET_ID != '' && hashFiles('config/tabs.csv') == '' }}
-        run: |
-          scripts/publish_tab.sh \
-            --sheet-id "${SHEET_ID}" \
-            --tab-name "SCAN" \
-            --gid "${{ secrets.GID_SCAN }}" \
-            --branch "main" \
-            --chunk-size 600
-          # Example H_/TA_ (uncomment after adding secrets)
-          # scripts/publish_tab.sh --sheet-id "${SHEET_ID}" --tab-name "H_XIU"  --gid "${{ secrets.GID_H_XIU }}"  --branch "main" --incremental-days 30 --date-col Date --chunk-size 1000
-          # scripts/publish_tab.sh --sheet-id "${SHEET_ID}" --tab-name "TA_XIU" --gid "${{ secrets.GID_TA_XIU }}" --branch "main" --incremental-days 30 --date-col Date --chunk-size 1000
+wb = load_workbook("tmp/workbook.xlsx", data_only=True, read_only=True)
+names = [n for n in wb.sheetnames if not (ex and ex.search(n))]
+pad = len(str(len(names)))
 
-      - name: Commit & push artifacts
-        run: |
-          git config user.name  "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
-          git add sheets/*.csv live/** || true
-          git commit -m "Morning Mirror: publish per-page CSVs + /live artifacts" || echo "No changes"
-          git push
+index = []
+for i, name in enumerate(names, 1):
+    ws = wb[name]
+    safe = re.sub(r'[^A-Za-z0-9._-]+', '_', name).strip('_') or f"Sheet_{i}"
+    fname = f"{i:0{pad}d}_{safe}.csv"
+    fpath = os.path.join(out_dir, fname)
 
-      - name: Upload quick preview artifacts (optional)
+    with open(fpath, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        for r_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+            if r_idx < hdr_row:
+                continue  # skip banner/title rows above header
+            r = list(row)
+            # Trim trailing empties to keep CSV compact
+            while r and (r[-1] is None or (isinstance(r[-1], str) and r[-1].strip() == "")):
+                r.pop()
+            w.writerow(["" if v is None else v for v in r])
+
+    # stats for index
+    try:
+        with open(fpath, encoding="utf-8") as f:
+            lines = sum(1 for _ in f)
+    except Exception:
+        lines = 0
+
+    index.append({"order": i, "sheet": name, "file": fpath, "rows": lines})
+
+# Write an index to browse outputs easily
+with open(os.path.join(out_dir, "_index.json"), "w", encoding="utf-8") as f:
+    json.dump(index, f, ensure_ascii=False, indent=2)
+
+print(f"Wrote {len(names)} CSV files to {out_dir}")
+for item in index:
+    print(f"{item['order']:02d} {item['sheet']} -> {item['file']} ({item['rows']} lines)")
+PY
+
+      - name: Commit & push if changed
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Mirror ALL sheets (header-safe): $(date -u +'%Y-%m-%dT%H:%MZ')"
+          file_pattern: ${{ env.OUT_DIR }}/*.csv ${{ env.OUT_DIR }}/_index.json
+
+      - name: Upload artifact (always)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: live-previews
+          name: mirror-all-output
           path: |
-            live/*/head.csv
-            live/*/schema.json
-          if-no-files-found: ignore
+            ${{ env.OUT_DIR }}/*.csv
+            ${{ env.OUT_DIR }}/_index.json
+          if-no-files-found: warn
