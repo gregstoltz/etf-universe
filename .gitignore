@@ -1,11 +1,3 @@
-# System
-.DS_Store
-Thumbs.db
-
-# Node (if you add tooling later)
-node_modules/
-dist/
-
-# Python (if you add tooling later)
-__pycache__/
-*.pyc
+# .gitignore
+/tmp/
+*.tmp
