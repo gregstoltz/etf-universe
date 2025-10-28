@@ -18,15 +18,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch SCAN via gviz (by name, no gid)
-        run: |
-          set -euo pipefail
-          mkdir -p "$(dirname "$OUT_PATH")"
-          URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${SHEET_NAME}"
-          echo "Fetching: $URL"
-          curl -fSLo "$OUT_PATH" "$URL"
-          test -s "$OUT_PATH"
-          head -n 3 "$OUT_PATH" || true
+- name: Fetch SCAN via gviz (by name, no gid)
+  run: |
+    set -euo pipefail
+    mkdir -p "$(dirname "$OUT_PATH")"
+    # Force the pull to start at row 1
+    URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${SHEET_NAME}&range=A1:ZZZ100000"
+    echo "Fetching: $URL"
+    curl -fSLo "$OUT_PATH" "$URL"
+    head -n 3 "$OUT_PATH" || true
+
 
       - name: Commit & push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
