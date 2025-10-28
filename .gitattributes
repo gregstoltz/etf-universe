@@ -1,1 +1,2 @@
-* text=auto
+# .gitattributes
+scripts/*.sh text eol=lf
