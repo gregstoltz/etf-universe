@@ -1,9 +1,9 @@
-name: Mirror ALL sheets (header-safe)
+name: Mirror ALL sheets (morning)
 
 on:
-  workflow_dispatch: {}
   schedule:
     - cron: "0 12 * * 1-5"   # 08:00 Toronto, weekdays
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -13,9 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SHEET_ID: 1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M
-      OUT_DIR: sheets         # where CSVs will land
-      EXCLUDE_RX: ""          # e.g., "^(H_|TA_)" to skip those
-      HEADER_ROW: "1"         # set to "2" if your headers live on row 2
+      OUT_DIR: sheets
+      EXCLUDE_RX: ""
+      HEADER_ROW: "1"
       TZ: America/Toronto
 
     steps:
@@ -26,9 +26,7 @@ jobs:
           set -euo pipefail
           mkdir -p tmp
           URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx"
-          echo "Fetching workbook: $URL"
           curl -fSLo tmp/workbook.xlsx "$URL"
-          ls -lh tmp/workbook.xlsx
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -40,26 +38,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install openpyxl
 
-      - name: Split each tab into its own CSV (respect HEADER_ROW)
+      - name: Split each tab into its own CSV
+        shell: bash
         run: |
           set -euo pipefail
-          python - << 'PY'
+          python - <<'PY'
 import csv, os, re, json
 from openpyxl import load_workbook
 
-sheet_id   = os.getenv("SHEET_ID")
 out_dir    = os.getenv("OUT_DIR","sheets")
 exclude_rx = os.getenv("EXCLUDE_RX","")
-hdr_row    = int(os.getenv("HEADER_ROW","1"))  # 1-based index for the first row to export
+hdr_row    = int(os.getenv("HEADER_ROW","1"))
 
-ex = re.compile(exclude_rx) if exclude_rx else None
 os.makedirs(out_dir, exist_ok=True)
-
 wb = load_workbook("tmp/workbook.xlsx", data_only=True, read_only=True)
-names = [n for n in wb.sheetnames if not (ex and ex.search(n))]
-pad = len(str(len(names)))
 
+names = wb.sheetnames
+if exclude_rx:
+    rx = re.compile(exclude_rx)
+    names = [n for n in names if not rx.search(n)]
+
+pad = len(str(len(names))) if names else 1
 index = []
+
 for i, name in enumerate(names, 1):
     ws = wb[name]
     safe = re.sub(r'[^A-Za-z0-9._-]+', '_', name).strip('_') or f"Sheet_{i}"
@@ -70,14 +71,12 @@ for i, name in enumerate(names, 1):
         w = csv.writer(f)
         for r_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
             if r_idx < hdr_row:
-                continue  # skip banner/title rows above header
+                continue
             r = list(row)
-            # Trim trailing empties to keep CSV compact
             while r and (r[-1] is None or (isinstance(r[-1], str) and r[-1].strip() == "")):
                 r.pop()
             w.writerow(["" if v is None else v for v in r])
 
-    # stats for index
     try:
         with open(fpath, encoding="utf-8") as f:
             lines = sum(1 for _ in f)
@@ -86,7 +85,6 @@ for i, name in enumerate(names, 1):
 
     index.append({"order": i, "sheet": name, "file": fpath, "rows": lines})
 
-# Write an index to browse outputs easily
 with open(os.path.join(out_dir, "_index.json"), "w", encoding="utf-8") as f:
     json.dump(index, f, ensure_ascii=False, indent=2)
 
@@ -98,8 +96,10 @@ PY
       - name: Commit & push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Mirror ALL sheets (header-safe): $(date -u +'%Y-%m-%dT%H:%MZ')"
-          file_pattern: ${{ env.OUT_DIR }}/*.csv ${{ env.OUT_DIR }}/_index.json
+          commit_message: "Mirror ALL sheets (morning): $(date -u +'%Y-%m-%dT%H:%MZ')"
+          file_pattern: |
+            ${OUT_DIR}/*.csv
+            ${OUT_DIR}/_index.json
 
       - name: Upload artifact (always)
         if: always()
@@ -107,6 +107,6 @@ PY
         with:
           name: mirror-all-output
           path: |
-            ${{ env.OUT_DIR }}/*.csv
-            ${{ env.OUT_DIR }}/_index.json
+            ${OUT_DIR}/*.csv
+            ${OUT_DIR}/_index.json
           if-no-files-found: warn
