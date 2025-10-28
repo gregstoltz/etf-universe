@@ -2,7 +2,7 @@ name: Mirror ALL sheets (morning)
 
 on:
   schedule:
-    - cron: "0 12 * * 1-5"   # 08:00 Toronto, weekdays
+    - cron: "0 12 * * 1-5"
   workflow_dispatch: {}
 
 permissions:
@@ -33,16 +33,15 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install openpyxl
 
       - name: Split each tab into its own CSV
-        shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
+          python - <<PY
 import csv, os, re, json
 from openpyxl import load_workbook
 
@@ -96,10 +95,10 @@ PY
       - name: Commit & push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Mirror ALL sheets (morning): $(date -u +'%Y-%m-%dT%H:%MZ')"
+          commit_message: Mirror ALL sheets (morning)
           file_pattern: |
-            ${OUT_DIR}/*.csv
-            ${OUT_DIR}/_index.json
+            ${{ env.OUT_DIR }}/*.csv
+            ${{ env.OUT_DIR }}/_index.json
 
       - name: Upload artifact (always)
         if: always()
@@ -107,6 +106,6 @@ PY
         with:
           name: mirror-all-output
           path: |
-            ${OUT_DIR}/*.csv
-            ${OUT_DIR}/_index.json
+            ${{ env.OUT_DIR }}/*.csv
+            ${{ env.OUT_DIR }}/_index.json
           if-no-files-found: warn
