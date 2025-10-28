@@ -2,7 +2,7 @@ name: Mirror ALL sheets (morning)
 
 on:
   schedule:
-    - cron: "0 12 * * 1-5"
+    - cron: "0 12 * * 1-5"   # 08:00 Toronto, weekdays
   workflow_dispatch: {}
 
 permissions:
@@ -14,8 +14,6 @@ jobs:
     env:
       SHEET_ID: 1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M
       OUT_DIR: sheets
-      EXCLUDE_RX: ""
-      HEADER_ROW: "1"
       TZ: America/Toronto
 
     steps:
@@ -26,86 +24,39 @@ jobs:
           set -euo pipefail
           mkdir -p tmp
           URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx"
+          echo "Fetching: $URL"
           curl -fSLo tmp/workbook.xlsx "$URL"
+          ls -lh tmp/workbook.xlsx
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install xlsx2csv
         run: |
           python -m pip install --upgrade pip
-          pip install openpyxl
+          pip install xlsx2csv
 
       - name: Split each tab into its own CSV
         run: |
           set -euo pipefail
-          python - <<PY
-import csv, os, re, json
-from openpyxl import load_workbook
-
-out_dir    = os.getenv("OUT_DIR","sheets")
-exclude_rx = os.getenv("EXCLUDE_RX","")
-hdr_row    = int(os.getenv("HEADER_ROW","1"))
-
-os.makedirs(out_dir, exist_ok=True)
-wb = load_workbook("tmp/workbook.xlsx", data_only=True, read_only=True)
-
-names = wb.sheetnames
-if exclude_rx:
-    rx = re.compile(exclude_rx)
-    names = [n for n in names if not rx.search(n)]
-
-pad = len(str(len(names))) if names else 1
-index = []
-
-for i, name in enumerate(names, 1):
-    ws = wb[name]
-    safe = re.sub(r'[^A-Za-z0-9._-]+', '_', name).strip('_') or f"Sheet_{i}"
-    fname = f"{i:0{pad}d}_{safe}.csv"
-    fpath = os.path.join(out_dir, fname)
-
-    with open(fpath, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        for r_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
-            if r_idx < hdr_row:
-                continue
-            r = list(row)
-            while r and (r[-1] is None or (isinstance(r[-1], str) and r[-1].strip() == "")):
-                r.pop()
-            w.writerow(["" if v is None else v for v in r])
-
-    try:
-        with open(fpath, encoding="utf-8") as f:
-            lines = sum(1 for _ in f)
-    except Exception:
-        lines = 0
-
-    index.append({"order": i, "sheet": name, "file": fpath, "rows": lines})
-
-with open(os.path.join(out_dir, "_index.json"), "w", encoding="utf-8") as f:
-    json.dump(index, f, ensure_ascii=False, indent=2)
-
-print(f"Wrote {len(names)} CSV files to {out_dir}")
-for item in index:
-    print(f"{item['order']:02d} {item['sheet']} -> {item['file']} ({item['rows']} lines)")
-PY
+          mkdir -p "$OUT_DIR"
+          # -a = all sheets, -d , = comma delimiter
+          xlsx2csv -a -d , "tmp/workbook.xlsx" "$OUT_DIR"
+          echo "Wrote CSVs:"
+          ls -lh "$OUT_DIR"
 
       - name: Commit & push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: Mirror ALL sheets (morning)
-          file_pattern: |
-            ${{ env.OUT_DIR }}/*.csv
-            ${{ env.OUT_DIR }}/_index.json
+          file_pattern: ${{ env.OUT_DIR }}/*.csv
 
       - name: Upload artifact (always)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mirror-all-output
-          path: |
-            ${{ env.OUT_DIR }}/*.csv
-            ${{ env.OUT_DIR }}/_index.json
+          path: ${{ env.OUT_DIR }}/*.csv
           if-no-files-found: warn
