@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   mirror_all:
@@ -26,7 +27,7 @@ jobs:
           URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx"
           echo "Fetching: $URL"
           curl -fSLo tmp/workbook.xlsx "$URL"
-          ls -lh tmp/workbook.xlsx
+          ls -lh tmp/workbook.xlsx || true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -42,16 +43,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$OUT_DIR"
-          # -a = all sheets, -d , = comma delimiter
           xlsx2csv -a -d , "tmp/workbook.xlsx" "$OUT_DIR"
-          echo "Wrote CSVs:"
-          ls -lh "$OUT_DIR"
-
-      - name: Commit & push if changed
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: Mirror ALL sheets (morning)
-          file_pattern: ${{ env.OUT_DIR }}/*.csv
+          echo "Generated CSVs:"
+          ls -lh "$OUT_DIR" || true
 
       - name: Upload artifact (always)
         if: always()
@@ -60,3 +54,17 @@ jobs:
           name: mirror-all-output
           path: ${{ env.OUT_DIR }}/*.csv
           if-no-files-found: warn
+
+      - name: Commit changes and create pull request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          commit-message: Mirror ALL sheets (morning)
+          title: Mirror ALL sheets (morning)
+          body: Automated update of mirrored sheets.
+          base: main
+          # Use a stable branch name but with a timestamp suffix to avoid conflicts
+          branch: auto/mirror-all-morning
+          branch-suffix: timestamp
+          add-paths: |
+            ${{ env.OUT_DIR }}/*.csv
+          delete-branch: true
