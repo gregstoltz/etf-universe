@@ -6,11 +6,9 @@ on:
     - cron: "0 12 * * 1-5"
   workflow_dispatch:
 
-# Needed to push CSVs & /live artifacts back to the repo
 permissions:
   contents: write
 
-# Prevent overlapping runs if one is still going
 concurrency:
   group: morning-mirror
   cancel-in-progress: false
@@ -21,10 +19,7 @@ jobs:
     timeout-minutes: 25
 
     env:
-      # Sheet + (optional) CSV config (TabName,GID)
       SHEET_ID: ${{ secrets.SHEET_ID }}
-      # If you have a config/tabs.csv, leave as-is.
-      # If not, see the fallback matrix section below.
       CONFIG_TABS: config/tabs.csv
 
     steps:
@@ -41,31 +36,33 @@ jobs:
           chmod +x scripts/publish_tab.sh || true
           chmod +x scripts/publish_all_tabs.sh || true
 
-      # ──────────────────────────────────────────────────────────────
-      # OPTION A: Drive from config/tabs.csv (recommended)
-      #   File format: TabName,GID (with header row)
-      #   e.g.
-      #     TabName,GID
-      #     SCAN,1375435285
-      #     H_XIU,111111111
-      #     TA_XIU,222222222
-      # If scripts/publish_all_tabs.sh exists, use it; else loop locally.
-      # ──────────────────────────────────────────────────────────────
-      - name: Publish all tabs (from config/tabs.csv)
-        if: ${{ env.SHEET_ID != '' && hashFiles(env.CONFIG_TABS) != '' && exists('scripts/publish_all_tabs.sh') }}
+      - name: Export config/tabs.csv from Google Sheets (TABS tab)
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          GID_TABS: ${{ secrets.GID_TABS }}
         run: |
-          ./scripts/publish_all_tabs.sh \
+          mkdir -p config
+          curl -sSL \
+            "https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID_TABS}" \
+            -o config/tabs.csv
+          echo "tabs.csv:"
+          head -n 10 config/tabs.csv || true
+
+      # OPTION A: Drive from config/tabs.csv (recommended)
+      - name: Publish all tabs (from config/tabs.csv via helper)
+        if: ${{ env.SHEET_ID != '' && hashFiles('config/tabs.csv') != '' && hashFiles('scripts/publish_all_tabs.sh') != '' }}
+        run: |
+          scripts/publish_all_tabs.sh \
             --sheet-id "${SHEET_ID}" \
             --branch "main" \
             --config "${CONFIG_TABS}"
 
       - name: Publish all tabs (inline loop; no publish_all_tabs.sh)
-        if: ${{ env.SHEET_ID != '' && hashFiles(env.CONFIG_TABS) != '' && !exists('scripts/publish_all_tabs.sh') }}
+        if: ${{ env.SHEET_ID != '' && hashFiles('config/tabs.csv') != '' && hashFiles('scripts/publish_all_tabs.sh') == '' }}
         run: |
-          while IFS=, read -r NAME GID; do
+          while IFS=, read -r NAME GID REST; do
             # skip header
             [[ "$NAME" == "TabName" ]] && continue
-            # Incremental 30d only for H_* or TA_*; full replace for others (e.g., SCAN)
             if [[ "$NAME" == H_* || "$NAME" == TA_* ]]; then
               scripts/publish_tab.sh \
                 --sheet-id "${SHEET_ID}" \
@@ -85,41 +82,19 @@ jobs:
             fi
           done < "${CONFIG_TABS}"
 
-      # ──────────────────────────────────────────────────────────────
-      # OPTION B (fallback): No config/tabs.csv?
-      #   Use a small matrix of known tabs. Add rows as needed.
-      #   Delete this whole job step once A is working.
-      # ──────────────────────────────────────────────────────────────
+      # OPTION B: Fallback if tabs.csv isn’t available
       - name: Fallback — explicitly publish a few tabs (delete once config is used)
-        if: ${{ env.SHEET_ID != '' && hashFiles(env.CONFIG_TABS) == '' }}
+        if: ${{ env.SHEET_ID != '' && hashFiles('config/tabs.csv') == '' }}
         run: |
-          # SCAN (snapshot; no incremental)
           scripts/publish_tab.sh \
             --sheet-id "${SHEET_ID}" \
             --tab-name "SCAN" \
             --gid "${{ secrets.GID_SCAN }}" \
             --branch "main" \
             --chunk-size 600
-
-          # Example H_/TA_ with incremental tail rewrite
-          # (uncomment & set secrets GIDs for your symbols)
-          # scripts/publish_tab.sh \
-          #   --sheet-id "${SHEET_ID}" \
-          #   --tab-name "H_XIU" \
-          #   --gid "${{ secrets.GID_H_XIU }}" \
-          #   --branch "main" \
-          #   --incremental-days 30 \
-          #   --date-col Date \
-          #   --chunk-size 1000
-
-          # scripts/publish_tab.sh \
-          #   --sheet-id "${SHEET_ID}" \
-          #   --tab-name "TA_XIU" \
-          #   --gid "${{ secrets.GID_TA_XIU }}" \
-          #   --branch "main" \
-          #   --incremental-days 30 \
-          #   --date-col Date \
-          #   --chunk-size 1000
+          # Example H_/TA_ (uncomment after adding secrets)
+          # scripts/publish_tab.sh --sheet-id "${SHEET_ID}" --tab-name "H_XIU"  --gid "${{ secrets.GID_H_XIU }}"  --branch "main" --incremental-days 30 --date-col Date --chunk-size 1000
+          # scripts/publish_tab.sh --sheet-id "${SHEET_ID}" --tab-name "TA_XIU" --gid "${{ secrets.GID_TA_XIU }}" --branch "main" --incremental-days 30 --date-col Date --chunk-size 1000
 
       - name: Commit & push artifacts
         run: |
@@ -129,7 +104,6 @@ jobs:
           git commit -m "Morning Mirror: publish per-page CSVs + /live artifacts" || echo "No changes"
           git push
 
-      # Optional: upload the latest head/schema for quick inspection in Actions UI
       - name: Upload quick preview artifacts (optional)
         uses: actions/upload-artifact@v4
         with:
