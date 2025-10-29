@@ -1,9 +1,9 @@
-name: Mirror SCAN (header-robust)
+name: Mirror SCAN (inject headers if missing)
 
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "0 12 * * 1-5"   # 08:00 Toronto, weekdays
+    - cron: "0 12 * * 1-5"   # 08:00 Toronto weekdays
 
 permissions:
   contents: write
@@ -13,67 +13,48 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SHEET_ID: 1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M
-      SHEET_GID: "1375435285"      # <-- confirm SCAN gid
+      SHEET_GID: "1375435285"        # confirm SCAN gid
       OUT_PATH: live/SCAN.csv
-      TZ: America/Toronto
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch SCAN (header + body, export endpoint)
-        shell: bash
+      - name: Fetch SCAN CSV
         run: |
           set -euo pipefail
           mkdir -p "$(dirname "$OUT_PATH")"
+          BASE="https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}"
+          curl -fSLA "mirror-scan/1.2" -o /tmp/scan.csv "$BASE"
 
-          base="https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}"
+          # Normalize line endings and strip BOM on first line
+          sed -i 's/\r$//' /tmp/scan.csv
+          perl -CS -pe 's/^\x{FEFF}//;' -i /tmp/scan.csv
 
-          # Fetch header-only (row 1) and body (row 2 onward)
-          curl -fSLA "mirror-scan/1.1" -o /tmp/header.csv "${base}&range=A1:ZZZ1"
-          curl -fSLA "mirror-scan/1.1" -o /tmp/body.csv   "${base}&range=A2:ZZZ100000"
+          # Canonical header
+          HEADERS='Symbol,Live,Trend,Momentum,Volatility,Flow,RelStrength,Quality,Macro,STS,LTS,Date,Open,High,Low,Close,Volume,SMA20,SMA50,SMA200,SMA20_Slp,SMA50_Slp,SMA200_Slp,>MA50,>MA200,GoldenX,LinReg_Slp,Chande,ADX14,RSI14,RSI_D3,MACD_Line,MACD_Hist,RET_3M_pct,RET_6M_pct,RET_12M_pct,StochK14,ROC20_pct,ATR_pct,StdDev20,Vol60,Beta60,R2_60,Ulcer14,Sharpe60,MaxDD_6M_pct,Vol_vs_Avg,OBV,VolROC20,AD_Line,CMF20,MFI14,RS_3M,RS_6M,RS_Bench,Alpha60,InfoRatio,Corr60,Beta,ZScore,Issues'
 
-          # Detect accidental HTML sign-in page
-          if head -c 1 /tmp/header.csv | grep -q "<"; then
-            echo "ERROR: Got HTML (sheet likely not shared 'Anyone with the link')."
-            exit 3
+          FIRST_LINE="$(head -n1 /tmp/scan.csv)"
+          FIRST_FIELD="$(echo "$FIRST_LINE" | cut -d',' -f1 | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+
+          # If the first line is not a multi-column header (or is empty/only 'Symbol'), inject headers
+          COLS_FIRST_LINE="$(awk -F',' '{print NF; exit}' /tmp/scan.csv)"
+          if [ "$FIRST_FIELD" != "SYMBOL" ] || [ "$COLS_FIRST_LINE" -lt 5 ]; then
+            echo "$HEADERS" > "$OUT_PATH"
+            cat /tmp/scan.csv >> "$OUT_PATH"
+          else
+            # Looks like we have at least a 'Symbol' header—still check if it’s a one-cell header row
+            if [ "$COLS_FIRST_LINE" -lt 5 ]; then
+              echo "$HEADERS" > "$OUT_PATH"
+              tail -n +2 /tmp/scan.csv >> "$OUT_PATH"
+            else
+              cp /tmp/scan.csv "$OUT_PATH"
+            fi
           fi
 
-          # Normalize line endings and strip UTF-8 BOM from header
-          sed -i 's/\r$//' /tmp/header.csv
-          sed -i 's/\r$//' /tmp/body.csv
-          perl -CS -pe 's/^\x{FEFF}//;' -i /tmp/header.csv
-
-          # Basic header sanity
-          first_cell="$(head -n1 /tmp/header.csv | cut -d',' -f1)"
-          if [ -z "$first_cell" ]; then
-            echo "ERROR: Header row is empty. Check SCAN row 1 has column names."
-            exit 2
-          fi
-          # Allow BOM/whitespace/case variance
-          norm_first="$(echo "$first_cell" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
-          if [ "$norm_first" != "SYMBOL" ]; then
-            echo "WARN: First header cell isn't 'Symbol' (it's '$first_cell'). Continuing anyway."
-          fi
-
-          # Assemble final CSV
-          cat /tmp/header.csv > "$OUT_PATH"
-          if [ -s /tmp/body.csv ]; then
-            # Ensure we don't accidentally duplicate header if sheet had only 1 row
-            cat /tmp/body.csv >> "$OUT_PATH"
-          fi
-
-          echo "First 5 lines:"
+          echo "Preview:"
           head -n 5 "$OUT_PATH"
 
       - name: Commit & push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Mirror SCAN (header-robust): $(date -u +'%Y-%m-%dT%H:%MZ')"
+          commit_message: "Mirror SCAN (with header injection): $(date -u +'%Y-%m-%dT%H:%MZ')"
           file_pattern: ${{ env.OUT_PATH }}
-
-      - name: Upload artifact (always)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mirror-scan-output
-          path: ${{ env.OUT_PATH }}
-          if-no-files-found: warn
