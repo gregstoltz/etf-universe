@@ -1,9 +1,9 @@
-name: Mirror SCAN (simple, header-safe)
+name: Mirror SCAN (header-robust)
 
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "0 12 * * 1-5"
+    - cron: "0 12 * * 1-5"   # 08:00 Toronto, weekdays
 
 permissions:
   contents: write
@@ -13,45 +13,41 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SHEET_ID: 1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M
-      SHEET_NAME: SCAN
+      SHEET_GID: "1375435285"      # <-- confirm SCAN gid
       OUT_PATH: live/SCAN.csv
       TZ: America/Toronto
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch SCAN via gviz (with headers)
+      - name: Fetch SCAN (header + body, export endpoint)
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$(dirname "$OUT_PATH")"
 
-          # gviz omits headers unless you ask for them:
-          # use tqx=out:csv;headers:1 and a broad range to include row 1
-          URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?sheet=${SHEET_NAME}&range=A1:ZZZ100000&tq=select%20*&tqx=out:csv;headers:1"
-          echo "Fetching: $URL"
-          curl -fSLA "mirror-scan/1.0" -o "$OUT_PATH" "$URL"
-          test -s "$OUT_PATH"
+          base="https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}"
 
-          echo "First 5 lines:"
-          head -n 5 "$OUT_PATH"
+          # Fetch header-only (row 1) and body (row 2 onward)
+          curl -fSLA "mirror-scan/1.1" -o /tmp/header.csv "${base}&range=A1:ZZZ1"
+          curl -fSLA "mirror-scan/1.1" -o /tmp/body.csv   "${base}&range=A2:ZZZ100000"
 
-          # sanity check header
-          first_cell="$(head -n1 "$OUT_PATH" | cut -d',' -f1)"
-          if [ "$first_cell" != "Symbol" ]; then
-            echo "ERROR: Header row not detected (first cell: '$first_cell')."
-            echo "Tip: Make sure row 1 in SCAN has the headers and the sheet name is exact."
-            exit 2
+          # Detect accidental HTML sign-in page
+          if head -c 1 /tmp/header.csv | grep -q "<"; then
+            echo "ERROR: Got HTML (sheet likely not shared 'Anyone with the link')."
+            exit 3
           fi
 
-      - name: Commit & push if changed
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Mirror SCAN (gviz headers=1): $(date -u +'%Y-%m-%dT%H:%MZ')"
-          file_pattern: ${{ env.OUT_PATH }}
+          # Normalize line endings and strip UTF-8 BOM from header
+          sed -i 's/\r$//' /tmp/header.csv
+          sed -i 's/\r$//' /tmp/body.csv
+          perl -CS -pe 's/^\x{FEFF}//;' -i /tmp/header.csv
 
-      - name: Upload artifact (always)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mirror-scan-output
-          path: ${{ env.OUT_PATH }}
-          if-no-files-found: warn
+          # Basic header sanity
+          first_cell="$(head -n1 /tmp/header.csv | cut -d',' -f1)"
+          if [ -z "$first_cell" ]; then
+            echo "ERROR: Header row is empty. Check SCAN row 1 has column names."
+            exit 2
+          fi
+          # Allow BOM/whitespace/case variance
+          norm_first="$(echo "$first_cell" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+          if [ "$norm_first" != "SYMBOL" ];_]()
