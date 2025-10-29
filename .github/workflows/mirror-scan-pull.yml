@@ -13,28 +13,36 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SHEET_ID: 1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M
-      SHEET_NAME: SCAN
-      OUT_PATH: sheets/SCAN.csv
+      SHEET_GID: "1375435285"          # <-- put the SCAN tab's gid here
+      OUT_PATH: live/SCAN.csv          # (use live/ if you want it there)
       TZ: America/Toronto
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch SCAN via gviz (by name, force A1 range)
+      - name: Fetch SCAN via export (always has headers)
         run: |
           set -euo pipefail
           mkdir -p "$(dirname "$OUT_PATH")"
-          # Force pull from A1 to include headers (expand columns/rows generously)
-          URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${SHEET_NAME}&range=A1:ZZZ100000"
+          URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}"
           echo "Fetching: $URL"
-          curl -fSLo "$OUT_PATH" "$URL"
+          curl -fSLA "mirror-scan/1.0" -o "$OUT_PATH" "$URL"
           test -s "$OUT_PATH"
-          echo "First 3 lines:"
-          head -n 3 "$OUT_PATH" || true
+
+          echo "First 5 lines:"
+          head -n 5 "$OUT_PATH"
+
+          # sanity: first cell should read Symbol
+          first_cell="$(head -n1 "$OUT_PATH" | cut -d',' -f1)"
+          if [ "$first_cell" != "Symbol" ]; then
+            echo "ERROR: Header row not detected (first cell: '$first_cell')."
+            echo "Tip: ensure SCAN tab row 1 contains headers and the gid is correct."
+            exit 2
+          fi
 
       - name: Commit & push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Mirror SCAN (gviz, header-safe): $(date -u +'%Y-%m-%dT%H:%MZ')"
+          commit_message: "Mirror SCAN (export): $(date -u +'%Y-%m-%dT%H:%MZ')"
           file_pattern: ${{ env.OUT_PATH }}
 
       - name: Upload artifact (always)
