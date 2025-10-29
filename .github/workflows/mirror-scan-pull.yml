@@ -3,7 +3,7 @@ name: Mirror SCAN (simple, header-safe)
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "0 12 * * 1-5"   # 08:00 Toronto, weekdays
+    - cron: "0 12 * * 1-5"
 
 permissions:
   contents: write
@@ -13,17 +13,20 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SHEET_ID: 1iClfgrC4QaJ7Wb00dPoeg6DANCc1VisSqds-yhXtL2M
-      SHEET_GID: "1375435285"          # <-- put the SCAN tab's gid here
-      OUT_PATH: live/SCAN.csv          # (use live/ if you want it there)
+      SHEET_NAME: SCAN
+      OUT_PATH: live/SCAN.csv
       TZ: America/Toronto
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch SCAN via export (always has headers)
+      - name: Fetch SCAN via gviz (with headers)
         run: |
           set -euo pipefail
           mkdir -p "$(dirname "$OUT_PATH")"
-          URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}"
+
+          # gviz omits headers unless you ask for them:
+          # use tqx=out:csv;headers:1 and a broad range to include row 1
+          URL="https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?sheet=${SHEET_NAME}&range=A1:ZZZ100000&tq=select%20*&tqx=out:csv;headers:1"
           echo "Fetching: $URL"
           curl -fSLA "mirror-scan/1.0" -o "$OUT_PATH" "$URL"
           test -s "$OUT_PATH"
@@ -31,18 +34,18 @@ jobs:
           echo "First 5 lines:"
           head -n 5 "$OUT_PATH"
 
-          # sanity: first cell should read Symbol
+          # sanity check header
           first_cell="$(head -n1 "$OUT_PATH" | cut -d',' -f1)"
           if [ "$first_cell" != "Symbol" ]; then
             echo "ERROR: Header row not detected (first cell: '$first_cell')."
-            echo "Tip: ensure SCAN tab row 1 contains headers and the gid is correct."
+            echo "Tip: Make sure row 1 in SCAN has the headers and the sheet name is exact."
             exit 2
           fi
 
       - name: Commit & push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Mirror SCAN (export): $(date -u +'%Y-%m-%dT%H:%MZ')"
+          commit_message: "Mirror SCAN (gviz headers=1): $(date -u +'%Y-%m-%dT%H:%MZ')"
           file_pattern: ${{ env.OUT_PATH }}
 
       - name: Upload artifact (always)
