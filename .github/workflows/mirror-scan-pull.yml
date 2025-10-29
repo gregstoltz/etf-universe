@@ -50,4 +50,30 @@ jobs:
           fi
           # Allow BOM/whitespace/case variance
           norm_first="$(echo "$first_cell" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
-          if [ "$norm_first" != "SYMBOL" ];_]()
+          if [ "$norm_first" != "SYMBOL" ]; then
+            echo "WARN: First header cell isn't 'Symbol' (it's '$first_cell'). Continuing anyway."
+          fi
+
+          # Assemble final CSV
+          cat /tmp/header.csv > "$OUT_PATH"
+          if [ -s /tmp/body.csv ]; then
+            # Ensure we don't accidentally duplicate header if sheet had only 1 row
+            cat /tmp/body.csv >> "$OUT_PATH"
+          fi
+
+          echo "First 5 lines:"
+          head -n 5 "$OUT_PATH"
+
+      - name: Commit & push if changed
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Mirror SCAN (header-robust): $(date -u +'%Y-%m-%dT%H:%MZ')"
+          file_pattern: ${{ env.OUT_PATH }}
+
+      - name: Upload artifact (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mirror-scan-output
+          path: ${{ env.OUT_PATH }}
+          if-no-files-found: warn
